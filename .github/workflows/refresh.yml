@@ -1,0 +1,41 @@
+name: Refresh public timetables
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 15 * * 0'
+permissions:
+  contents: write
+concurrency:
+  group: public-transit-data
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate regional snapshot from public sources
+        run: python generate.py
+      - name: Check dataset before publishing
+        shell: python
+        run: |
+          import gzip, json
+          from datetime import datetime, timezone, timedelta
+          with gzip.open('transit.json.gz', 'rt', encoding='utf-8') as stream:
+              data = json.load(stream)
+          assert datetime.now(timezone.utc) - datetime.fromisoformat(data['generatedAt']) < timedelta(days=1)
+          assert len(data['stops']) > 1000 and len(data['trips']) > 1000
+          assert len(data['sources']) == 2
+      - name: Publish public dataset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view transit-data >/dev/null 2>&1; then
+            gh release create transit-data --title 'Public regional timetables' --notes 'Public PMDP (CC BY 4.0) and regional JDF/GTFS (CC0) timetables. No athlete data. See README for sources.'
+          fi
+          gh release upload transit-data transit.json.gz --clobber

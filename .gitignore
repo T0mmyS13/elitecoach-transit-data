@@ -1,0 +1,3 @@
+transit.json.gz
+*.tmp
+__pycache__/
